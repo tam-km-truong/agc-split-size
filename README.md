@@ -36,6 +36,9 @@ bin/agc create -i fn.txt -o col.agc -k 29 -l 22 -b 100 -t 16 ref.fa   # same as 
                                                                     # of compression parameters
 bin/agc create -c -o col.agc ref.fa samples.fa                        # compress samples stored in a single file
                                                                     # (reference must be given separately)
+bin/agc create -p 100M -i genomes.txt -o genomes.agc                  # split into genomes.part001.agc,
+                                                                    # genomes.part002.agc, ...
+                                                                    # Each part uses its first genome as reference.
 
 # Add new genomes to the collection
 bin/agc append in.agc in3.fa in4.fa > out.agc                         # add 2 genomes to the compressed archive
@@ -168,6 +171,9 @@ Options:
 * `-s <int>`       - expected segment size (default: 60000; min: 100; max: 1000000)
 * `-t <int>`       - no. of threads (default: no. logical cores / 2; min: 1; max: no. logical. cores)
 * `-v <int>`       - verbosity level (default: 0; min: 0; max: 2)
+* `-p <size>`       - split output into multiple archives with approximate target size per part.
+  Supported suffixes: K, M, G, T. The genome that reaches/exceeds the target remains in the current part.
+  Each part uses its first genome as reference.
 
 #### Hints
 FASTA files can be optionally gzipped. It is, however, recommended (for performance reasons) to use uncompressed reference FASTA file.

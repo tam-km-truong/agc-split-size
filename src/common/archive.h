@@ -184,6 +184,7 @@ public:
 	bool AddPartBuffered(const int stream_id, const vector<uint8_t>& v_data, const uint64_t metadata = 0);
 
 	bool FlushOutBuffers();
+	size_t GetCurrentOffset();
 
 	bool GetPart(const int stream_id, vector<uint8_t> &v_data, uint64_t &metadata);
 	bool GetPart(const int stream_id, const int part_id, vector<uint8_t>& v_data, uint64_t& metadata);

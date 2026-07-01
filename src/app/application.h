@@ -16,6 +16,7 @@
 #include <string>
 #include <thread>
 #include <algorithm>
+#include <cstdint>
 
 using namespace std;
 
@@ -71,6 +72,7 @@ struct CParams
 	b_value<double> fallback_frac{ 0, 0, 0.05 };
 
 	uint32_t no_segments = 0;
+	uint64_t target_part_size = 0;
 	bool concatenated_genomes = false;
 	bool use_stdout = true;
 	bool store_cmd_line = true;
@@ -79,6 +81,7 @@ struct CParams
 	bool no_ref = false;
 	bool fast = false;
 	bool streaming = false;
+	bool split_create = false;
 
 	CParams() = default;
 };
@@ -115,8 +118,12 @@ class CApplication
 
 	void sanitize_input_file_names(vector<string> &v_file_names);
 	void remove_common_suffixes(string& sample_name);
+	uint64_t parse_size_with_suffix(const string& s) const;
+	string make_part_archive_name(const string& base_name, uint32_t part_id) const;
+	uint64_t current_file_size(const string& file_name) const;
 
 	bool create();
+	bool create_split();
 	bool append();
 	bool getcol();
 	bool getset();

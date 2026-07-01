@@ -761,6 +761,7 @@ public:
 	bool Close(const uint32_t no_threads = 1);
 
 	bool AddSampleFiles(vector<pair<string, string>> _v_sample_file_name, const uint32_t _no_threads);
+	uint64_t GetCurrentArchiveSizeEstimate();
 };
 
 // EOF

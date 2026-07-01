@@ -359,6 +359,19 @@ bool CArchive::FlushOutBuffers()
 }
 
 // *******************************************************************************************
+size_t CArchive::GetCurrentOffset()
+{
+	lock_guard<mutex> lck(mtx);
+
+	if (input_mode)
+		return 0;
+
+	flush_out_buffers();
+
+	return f_offset;
+}
+
+// *******************************************************************************************
 void CArchive::SetRawSize(const int stream_id, const size_t raw_size)
 {
 	lock_guard<mutex> lck(mtx);

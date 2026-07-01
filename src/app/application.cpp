@@ -13,6 +13,11 @@
 #include <unordered_set>
 #include <fstream>
 #include <iterator>
+#include <cctype>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
+#include <sstream>
 #include "../common/utils.h"
 #include "../../3rd_party/ketopt.h"
 
@@ -119,6 +124,9 @@ void CApplication::usage_create() const
 	cerr << "   -s <int>       - expected segment size " << execution_params.segment_size.info() << "\n";
     cerr << "   -t <int>       - no of threads " << execution_params.no_threads.info() << "\n";
     cerr << "   -v <int>       - verbosity level " << execution_params.verbosity.info() << "\n";
+	cerr << "   -p <size>      - split create output into multiple archives with approximate target size per part.\n";
+	cerr << "                    Supported suffixes: K, M, G, T.\n";
+	cerr << "                    In split mode, each part uses its first genome as reference.\n";
 }
 
 // *******************************************************************************************
@@ -127,7 +135,7 @@ bool CApplication::parse_params_create(const int argc, const char** argv)
 	ketopt_t o = KETOPT_INIT;
 	int i, c;
 
-	while ((c = ketopt(&o, argc, argv, 1, "t:b:s:k:f:l:acdfi:o:v:", 0)) >= 0) {
+	while ((c = ketopt(&o, argc, argv, 1, "t:b:s:k:f:l:acdfi:o:p:v:", 0)) >= 0) {
 		if (c == 't') {
 			execution_params.no_threads.assign(atoi(o.arg));
 		} else if (c == 'b') {
@@ -152,9 +160,46 @@ bool CApplication::parse_params_create(const int argc, const char** argv)
 		} else if (c == 'o') {
 			execution_params.out_archive_name = o.arg;
 			execution_params.use_stdout = false;
+		} else if (c == 'p') {
+			execution_params.target_part_size = parse_size_with_suffix(o.arg);
+			if (execution_params.target_part_size == 0)
+				return false;
+			execution_params.split_create = true;
 		} else if (c == 'v') {
 			execution_params.verbosity.assign(atoi(o.arg));
+		} else if (c == ':') {
+			cerr << "Missing option value\n";
+			return false;
+		} else if (c == '?') {
+			cerr << "Unknown option\n";
+			return false;
 		}
+	}
+
+	if (execution_params.split_create)
+	{
+		if (execution_params.concatenated_genomes)
+		{
+			cerr << "Split create mode currently does not support concatenated-genomes mode (-c)." << endl;
+			return false;
+		}
+
+		if (execution_params.use_stdout || execution_params.out_archive_name.empty())
+		{
+			cerr << "Split create mode requires -o" << endl;
+			return false;
+		}
+
+		for (i = o.ind; i < argc; ++i)
+			execution_params.input_names.emplace_back(argv[i]);
+
+		if (execution_params.input_names.empty())
+		{
+			cerr << "No input genomes" << endl;
+			return false;
+		}
+
+		return true;
 	}
 
 	if (o.ind >= argc) {
@@ -627,6 +672,106 @@ void CApplication::remove_common_suffixes(string& sample_name)
 		if (!was_removed)
 			break;
 	}
+}
+
+// *******************************************************************************************
+uint64_t CApplication::parse_size_with_suffix(const string& s) const
+{
+	if (s.empty())
+	{
+		cerr << "Invalid -p value: " << s << endl;
+		return 0;
+	}
+
+	uint64_t multiplier = 1;
+	string digits = s;
+	const char suffix = s.back();
+
+	if (!isdigit(static_cast<unsigned char>(suffix)))
+	{
+		digits.pop_back();
+
+		switch (suffix)
+		{
+		case 'K':
+			multiplier = 1000ull;
+			break;
+		case 'M':
+			multiplier = 1000ull * 1000ull;
+			break;
+		case 'G':
+			multiplier = 1000ull * 1000ull * 1000ull;
+			break;
+		case 'T':
+			multiplier = 1000ull * 1000ull * 1000ull * 1000ull;
+			break;
+		default:
+			cerr << "Invalid -p value: " << s << endl;
+			return 0;
+		}
+	}
+
+	if (digits.empty())
+	{
+		cerr << "Invalid -p value: " << s << endl;
+		return 0;
+	}
+
+	uint64_t value = 0;
+	for (char ch : digits)
+	{
+		if (!isdigit(static_cast<unsigned char>(ch)))
+		{
+			cerr << "Invalid -p value: " << s << endl;
+			return 0;
+		}
+
+		const uint64_t digit = static_cast<uint64_t>(ch - '0');
+		if (value > (numeric_limits<uint64_t>::max() - digit) / 10ull)
+		{
+			cerr << "Invalid -p value: " << s << endl;
+			return 0;
+		}
+
+		value = value * 10ull + digit;
+	}
+
+	if (value == 0 || value > numeric_limits<uint64_t>::max() / multiplier)
+	{
+		cerr << "Invalid -p value: " << s << endl;
+		return 0;
+	}
+
+	return value * multiplier;
+}
+
+// *******************************************************************************************
+string CApplication::make_part_archive_name(const string& base_name, uint32_t part_id) const
+{
+	filesystem::path base_path(base_name);
+	const filesystem::path parent_path = base_path.parent_path();
+	const string stem = base_path.stem().string();
+	const string extension = base_path.extension().empty() ? ".agc" : base_path.extension().string();
+
+	ostringstream oss;
+	oss << stem << ".part" << setw(3) << setfill('0') << part_id << extension;
+
+	if (parent_path.empty())
+		return oss.str();
+
+	return (parent_path / oss.str()).string();
+}
+
+// *******************************************************************************************
+uint64_t CApplication::current_file_size(const string& file_name) const
+{
+	error_code ec;
+	const auto size = filesystem::file_size(file_name, ec);
+
+	if (ec)
+		return 0;
+
+	return static_cast<uint64_t>(size);
 }
 
 

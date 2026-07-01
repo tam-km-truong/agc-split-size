@@ -2399,4 +2399,13 @@ bool CAGCCompressor::Close(const uint32_t no_threads)
     return r;
 }
 
+// *******************************************************************************************
+uint64_t CAGCCompressor::GetCurrentArchiveSizeEstimate()
+{
+    if (!out_archive)
+        return 0;
+
+    return static_cast<uint64_t>(out_archive->GetCurrentOffset());
+}
+
 // EOF

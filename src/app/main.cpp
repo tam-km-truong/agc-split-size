@@ -41,7 +41,12 @@ int CApplication::Run(const int argc, const char** argv)
     auto t1 = chrono::high_resolution_clock::now();
 
     if (execution_params.mode == "create")
-        create();
+    {
+        if (execution_params.split_create)
+            create_split();
+        else
+            create();
+    }
     else if (execution_params.mode == "append")
         append();
     else if (execution_params.mode == "getcol")
@@ -119,6 +124,101 @@ bool CApplication::create()
     r &= agc_c.Close(execution_params.no_threads());
 
     return r;
+}
+
+// *******************************************************************************************
+bool CApplication::create_split()
+{
+    sanitize_input_file_names(execution_params.input_names);
+
+    if (execution_params.input_names.empty())
+    {
+        cerr << "No input genomes" << endl;
+        return false;
+    }
+
+    uint32_t part_id = 1;
+    size_t input_id = 0;
+
+    while (input_id < execution_params.input_names.size())
+    {
+        const string part_name = make_part_archive_name(execution_params.out_archive_name, part_id);
+        const string reference_file = execution_params.input_names[input_id];
+
+        if (execution_params.verbosity() > 0)
+        {
+            cerr << "Creating " << part_name
+                << " with reference " << reference_file << "\n";
+        }
+
+        CAGCCompressor agc_c;
+
+        bool r = agc_c.Create(
+            part_name,
+            execution_params.pack_cardinality(),
+            execution_params.k(),
+            reference_file,
+            execution_params.segment_size(),
+            execution_params.min_match_length(),
+            execution_params.concatenated_genomes,
+            execution_params.adaptive_compression,
+            execution_params.verbosity(),
+            execution_params.no_threads(),
+            execution_params.fallback_frac());
+
+        if (!r)
+        {
+            cerr << "Cannot create archive " << part_name << endl;
+            return false;
+        }
+
+        for (; input_id < execution_params.input_names.size();)
+        {
+            const string& fn = execution_params.input_names[input_id];
+
+            string sample_name = std::filesystem::path(fn).stem().string();
+            remove_common_suffixes(sample_name);
+
+            vector<pair<string, string>> one_sample;
+            one_sample.emplace_back(sample_name, fn);
+
+            if (execution_params.verbosity() > 0)
+                cerr << "Adding " << fn << " to " << part_name << "\n";
+
+            r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
+
+            if (!r)
+            {
+                cerr << "Cannot add sample " << fn << " to " << part_name << endl;
+                return false;
+            }
+
+            ++input_id;
+
+            const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
+
+            if (execution_params.verbosity() > 0)
+                cerr << "Current estimated archive size: " << current_size << " bytes\n";
+
+            if (current_size >= execution_params.target_part_size)
+                break;
+        }
+
+        if (execution_params.store_cmd_line)
+            agc_c.AddCmdLine(cmd_line);
+
+        r &= agc_c.Close(execution_params.no_threads());
+
+        if (!r)
+        {
+            cerr << "Cannot close archive " << part_name << endl;
+            return false;
+        }
+
+        ++part_id;
+    }
+
+    return true;
 }
 
 // *******************************************************************************************
