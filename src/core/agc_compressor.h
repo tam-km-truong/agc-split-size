@@ -763,8 +763,7 @@ public:
 	bool AddSampleFiles(vector<pair<string, string>> _v_sample_file_name, const uint32_t _no_threads);
 	uint64_t GetCurrentArchiveSizeEstimate();
 
-	uint32_t GetProcessedSamples() const { return processed_samples; }
-	uint32_t GetPackCardinality() const { return pack_cardinality; }
+	void ForceFlushSegments(const uint32_t no_threads);
 };
 
 // EOF

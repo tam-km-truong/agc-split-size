@@ -576,4 +576,21 @@ void CSegment::unpack(ZSTD_DCtx* zstd_ctx)
     internal_state = internal_state_t::normal;
 }
 
+void CSegment::flush_partial(ZSTD_CCtx* zstd_ctx)
+{
+    lock_guard<mutex> lck(mtx);
+
+    if (!v_lzp.empty())
+    {
+        store_in_archive(v_lzp, zstd_ctx);
+        v_lzp.clear();
+    }
+    
+    if (!v_raw.empty())
+    {
+        store_in_archive(v_raw, zstd_ctx);
+        v_raw.clear();
+    }
+}
+
 // EOF

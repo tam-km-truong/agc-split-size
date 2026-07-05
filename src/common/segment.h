@@ -336,6 +336,7 @@ public:
     size_t get_ref_size() const;
 
     void appending_init();
+    void flush_partial(ZSTD_CCtx* zstd_ctx);
 };
 
 // EOF

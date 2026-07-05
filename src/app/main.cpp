@@ -172,7 +172,9 @@ bool CApplication::create_split()
             return false;
         }
 
-        uint32_t samples_in_part = 0;
+        // Define milestones (e.g., 50%, 75%, 90%, 95%)
+        const double milestones[] = {0.50, 0.75, 0.90, 0.95, 1.0};
+        int milestone_idx = 0;
 
         for (; input_id < execution_params.input_names.size();)
         {
@@ -193,21 +195,28 @@ bool CApplication::create_split()
             }
 
             ++input_id;
-            ++samples_in_part;
 
-            cerr << "Current samples_in_part: " << samples_in_part << ".\n";
-            cerr << "pack card " << execution_params.pack_cardinality() << ".\n";
+            uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
-            if (samples_in_part % execution_params.pack_cardinality() == 0)
+            // Check if a milestone is reached. Use a while loop in case 
+            // a single sample addition crosses multiple milestones.
+            while (milestone_idx < 5 && current_size >= (execution_params.target_part_size * milestones[milestone_idx]))
             {
-                const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
-
                 if (execution_params.verbosity() > 0)
-                    cerr << "Current estimated archive size: " << current_size << " bytes\n";
+                    cerr << "Milestone " << (milestones[milestone_idx] * 100) << "% reached. Forcing flush...\n";
 
-                if (current_size >= execution_params.target_part_size)
-                    break;
+                // Force flush memory buffers to disk to get exact size
+                agc_c.ForceFlushSegments(execution_params.no_threads());
+                current_size = agc_c.GetCurrentArchiveSizeEstimate();
+                
+                if (execution_params.verbosity() > 0)
+                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
+
+                ++milestone_idx;
             }
+
+            if (current_size >= execution_params.target_part_size)
+                break;
         }
 
         if (execution_params.store_cmd_line)
