@@ -172,8 +172,8 @@ bool CApplication::create_split()
             return false;
         }
 
-        // Define milestones (e.g., 50%, 75%, 90%, 95%)
-        const double milestones[] = {0.50, 0.75, 0.90, 0.95, 1.0};
+        // Define milestones (e.g., 80%, 90%, 95%, 100%)
+        const double milestones[] = {0.80, 0.90, 0.95, 1.0};
         int milestone_idx = 0;
 
         for (; input_id < execution_params.input_names.size();)

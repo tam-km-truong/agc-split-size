@@ -334,3 +334,75 @@ S. Deorowicz, A. Danek, H. Li,
 AGC: Compact representation of assembled genomes with fast queries and updates.
 Bioinformatics, btad097 (2023)
 https://doi.org/10.1093/bioinformatics/btad097
+
+
+
+# Unoffical AGC territory - not supported by AGC
+
+This is an AI-summarized high-level reasoning of different trials and implementations that I made to have similar size balanced batches.
+
+# AGC Split-Create Size Estimation: Implementation Summary
+
+## Context and High-Level Overview
+
+The `split-create` feature partitions AGC archives into multiple files based on a predefined byte limit (`target_part_size`). During the file iteration loop, the running archive size must be estimated to determine when to close the current part and open a new one.
+
+The primary issue encountered during implementation was a consistent underestimation of the final archive size by a factor of two to three. The root cause was that size estimation logic (`CArchive::GetCurrentOffset()`) exclusively measured compressed bytes committed to disk, failing to account for a significant "tail" of uncompressed sequence data held in active memory.
+
+## AGC Pipeline Implementation Details
+
+The underestimation is a direct result of the application's asynchronous batching architecture:
+
+1. **Segment Groups (`CSegment`)**: The compressor maintains thousands of concurrent segment instances (e.g., ~9,000 active segments for ~2,500 samples). Sequences are delta-encoded and routed to these segments based on their splitters.
+2. **Uncompressed Memory Buffers**: Inside each `CSegment`, delta-encoded sequences accumulate as raw, uncompressed bytes within internal vectors (`v_lzp` and `v_raw`).
+3. **The Flush Threshold (`contigs_in_pack`)**: A segment compresses its internal vector via ZSTD and forwards it to the `CArchive` only when the vector size reaches the `contigs_in_pack` threshold (batch size, typically 500). Once flushed, the internal vector resets.
+4. **Asynchronous Execution**: Because sequence splitters are distributed unevenly, segments reach the 500-sequence limit asynchronously. There is no synchronized global flush during standard execution.
+5. **The Memory Tail**: At any given moment during the file loop, thousands of segments hold between 1 and 499 uncompressed sequences. This data is entirely invisible to the physical archive file until the terminal `Close()` routine forces all active segments to flush simultaneously.
+
+## Summary of Attempted Solutions
+
+Several approaches were evaluated to estimate the final compressed footprint of the memory tail before `Close()` execution:
+
+1. **Summing Unwritten Memory with Archive Offset**
+* *Implementation*: Calculated the raw byte length of `v_lzp` and `v_raw` across all segments and added it to the archive offset.
+* *Result*: Massive overestimation. This approach incorrectly summed uncompressed memory bytes with compressed disk bytes.
+
+
+2. **Applying a Static Compression Ratio**
+* *Implementation*: Divided the unwritten memory sum by a static ZSTD compression factor (e.g., 3).
+* *Result*: Inaccurate partitioning. Genomic compression ratios fluctuate significantly based on redundancy; a static heuristic cannot guarantee size compliance.
+
+
+3. **Modulo Sample Synchronization**
+* *Implementation*: Checked the archive size only when the processed sample count reached a multiple of 500, assuming buffers would be empty.
+* *Result*: Failed. The 500-limit triggers at the individual segment level, not the global sample level.
+
+
+4. **Dynamic Live-Compression Tracking**
+* *Implementation*: Tracked bytes immediately before and after ZSTD execution using atomic counters (`zstd_in`, `zstd_out`) within `CSegment` to establish a live compression ratio, applying this ratio to the unwritten memory.
+* *Result*: Abandoned in favor of a structural approach that guarantees exact disk measurements.
+
+
+
+## Final Solution and Rationale
+
+The estimation problem was resolved using a **Milestone-Based Forced Flush**.
+
+### Implementation
+
+1. **Partial Flush Logic**: Added a `flush_partial()` method to `CSegment` that ZSTD-compresses and clears current memory vectors without tearing down the object's internal reference state.
+2. **Multithreaded Delegation**: Added `ForceFlushSegments()` to `CAGCCompressor` to distribute the partial flush across worker threads.
+3. **Milestone Loop**: Defined fractional capacity milestones (e.g., 0.80, 0.90, 0.95, 1.0) within `create_split`. When the naive archive size estimate crosses a milestone, the loop pauses and invokes `ForceFlushSegments()`. The file size is then re-measured.
+
+### Rationale
+
+Predicting the precise compressed footprint of highly variable sequence data held in memory is mathematically non-trivial. Forcing an early flush solves the estimation problem by temporarily eliminating the uncompressed tail entirely.
+
+By limiting these forced flushes to specific target milestones, the implementation retains the performance benefits and block-size efficiency of the asynchronous batching architecture for the majority of the runtime. The I/O penalty and block fragmentation are restricted solely to the final percentages of the archive part's creation.
+
+### Limitations and Trade-offs
+
+While the forced flush guarantees size accuracy, it introduces two specific penalties to the compression pipeline at each milestone:
+
+1. **Degraded Compression Ratio**: ZSTD achieves its highest compression efficiency when operating on the full, optimal block size (`contigs_in_pack` = 500). When a forced flush is executed, thousands of segments prematurely compress smaller, partial blocks (e.g., 5 to 50 sequences). The reduced block sizes provide less historical data for the compressor's dictionary window, slightly reducing the overall compression ratio for those specific flushes.
+2. **Thread Synchronization and I/O Stalls**: The standard loop operates asynchronously without global blocking. `ForceFlushSegments()` forces a synchronization barrier where the main addition loop must pause while worker threads drain all segment memory arrays to disk. This causes brief spikes in I/O wait times and interrupts the CPU pipeline efficiency during the milestone checks.
