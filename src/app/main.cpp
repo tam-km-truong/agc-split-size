@@ -195,13 +195,19 @@ bool CApplication::create_split()
 
             ++input_id;
 
-            const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
+            uint32_t processed = agc_c.GetProcessedSamples();
+            uint32_t batch_size = agc_c.GetPackCardinality();
 
-            if (execution_params.verbosity() > 0)
-                cerr << "Current estimated archive size: " << current_size << " bytes\n";
+            if (processed > 0 && processed % batch_size == 0)
+            {
+                const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
-            if (current_size >= execution_params.target_part_size)
-                break;
+                if (execution_params.verbosity() > 0)
+                    cerr << "Current estimated archive size: " << current_size << " bytes\n";
+
+                if (current_size >= execution_params.target_part_size)
+                    break;
+            }
         }
 
         if (execution_params.store_cmd_line)

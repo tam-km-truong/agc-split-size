@@ -336,14 +336,6 @@ public:
     size_t get_ref_size() const;
 
     void appending_init();
-
-    size_t get_unwritten_size() {
-        lock_guard<mutex> lck(mtx);
-        size_t est = 0;
-        for (const auto& d : v_lzp) est += d.size();
-        for (const auto& r : v_raw) est += r.size();
-        return est;
-    }
 };
 
 // EOF
