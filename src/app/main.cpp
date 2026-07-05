@@ -182,9 +182,6 @@ bool CApplication::create_split()
             vector<pair<string, string>> one_sample;
             one_sample.emplace_back(sample_name, fn);
 
-            if (execution_params.verbosity() > 0)
-                cerr << "Adding " << fn << " to " << part_name << "\n";
-
             r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
 
             if (!r)
@@ -197,6 +194,8 @@ bool CApplication::create_split()
 
             uint32_t processed = agc_c.GetProcessedSamples();
             uint32_t batch_size = agc_c.GetPackCardinality();
+            cerr << "Current processed: " << processed << " genomes\n";
+            cerr << "Current batch_size: " << batch_size << " genomes\n";
 
             if (processed > 0 && processed % batch_size == 0)
             {
