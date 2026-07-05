@@ -195,6 +195,9 @@ bool CApplication::create_split()
             ++input_id;
             ++samples_in_part;
 
+            cerr << "Current samples_in_part: " << samples_in_part << ".\n";
+             cerr << "pack card " << execution_params.pack_cardinality() << ".\n";
+
             if (samples_in_part % execution_params.pack_cardinality() == 0)
             {
                 const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
