@@ -172,6 +172,8 @@ bool CApplication::create_split()
             return false;
         }
 
+        uint32_t samples_in_part = 0;
+
         for (; input_id < execution_params.input_names.size();)
         {
             const string& fn = execution_params.input_names[input_id];
@@ -191,13 +193,9 @@ bool CApplication::create_split()
             }
 
             ++input_id;
+            ++samples_in_part;
 
-            uint32_t processed = agc_c.GetProcessedSamples();
-            uint32_t batch_size = agc_c.GetPackCardinality();
-            cerr << "Current processed: " << processed << " genomes\n";
-            cerr << "Current batch_size: " << batch_size << " genomes\n";
-
-            if (processed > 0 && processed % batch_size == 0)
+            if (samples_in_part % execution_params.pack_cardinality() == 0)
             {
                 const uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
