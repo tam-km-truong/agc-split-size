@@ -196,7 +196,7 @@ bool CApplication::create_split()
             ++samples_in_part;
 
             cerr << "Current samples_in_part: " << samples_in_part << ".\n";
-             cerr << "pack card " << execution_params.pack_cardinality() << ".\n";
+            cerr << "pack card " << execution_params.pack_cardinality() << ".\n";
 
             if (samples_in_part % execution_params.pack_cardinality() == 0)
             {
