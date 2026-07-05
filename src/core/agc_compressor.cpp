@@ -2405,7 +2405,19 @@ uint64_t CAGCCompressor::GetCurrentArchiveSizeEstimate()
     if (!out_archive)
         return 0;
 
-    return static_cast<uint64_t>(out_archive->GetCurrentOffset());
+    // GetCurrentOffset() already flushes CArchive's m_buffer to disk
+    uint64_t total_size = out_archive->GetCurrentOffset();
+
+    // Account for the sequence data sitting unwritten in the segments
+    seg_vec_mtx.lock();
+    for (const auto& seg : v_segments)
+    {
+        if (seg != nullptr)
+            total_size += seg->get_unwritten_size();
+    }
+    seg_vec_mtx.unlock();
+
+    return total_size;
 }
 
 // EOF
