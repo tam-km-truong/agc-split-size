@@ -382,25 +382,27 @@ Several approaches were evaluated to estimate the final compressed footprint of 
 * *Implementation*: Tracked bytes immediately before and after ZSTD execution using atomic counters (`zstd_in`, `zstd_out`) within `CSegment` to establish a live compression ratio, applying this ratio to the unwritten memory.
 * *Result*: Abandoned in favor of a structural approach that guarantees exact disk measurements.
 
-
+5. **Static Soft Flushing (50% Filled)**
+* *Implementation*: Flushed segments that were at least half full (e.g., ≥250 items).
+* *Result*: Failed on hyper-variable reference genomes. High splitter density causes thousands of segments to remain mostly empty, meaning almost no segments cross the static threshold, leaving the memory tail hidden until the end.
 
 ## Final Solution and Rationale
 
-The estimation problem was resolved using a **Hybrid Milestone-Based Flush and Early Stop Threshold**.
+The estimation problem was resolved using a **Hybrid Milestone-Based Flush with Ordered Cardinality**.
 
 ### Implementation
 
-1. **Soft Flushes (`flush_soft`)**: Evaluated at early milestones (e.g., 60%, 70% of target size). This delegates a partial flush across worker threads but only forces compression on segments that are at least 50% full (e.g., ≥250 items). This tightens the size estimation gap without severely penalizing ZSTD compression efficiency for mostly empty segments.
-2. **Hard Flushes (`flush_partial`)**: Evaluated at late milestones (e.g., 80%, 90% of target size). This forces a complete flush of all uncompressed memory vectors to disk, guaranteeing an exact physical file size measurement at critical junctures before the target size is breached.
+1. **Soft Flushes via Ordered Cardinality (`flush_soft`)**: Evaluated at early milestones (e.g., 60%, 70% of target size). To solve the hyper-splitter edge case, it extracts the unwritten sequence counts across all segments and uses `std::nth_element` to find the 90th percentile threshold in O(N) time. It then forces a partial flush strictly on the **top 10% of segments** holding the most contigs.
+2. **Hard Flushes (`flush_partial`)**: Evaluated at late milestones (e.g., 80%, 90% of target size). This forces a complete flush of all uncompressed memory vectors across all segments to disk, guaranteeing an exact physical file size measurement at critical junctures.
 3. **Early Stop Threshold**: The loop break condition evaluates against a 95% threshold (`0.95 * target_part_size`) rather than 100%.
 
 ### Rationale
 
-Predicting the precise compressed footprint of highly variable sequence data held in memory is mathematically non-trivial. Forcing an early flush solves the estimation problem by temporarily eliminating the uncompressed tail entirely.
+Predicting the precise compressed footprint of highly variable sequence data is mathematically non-trivial. Forcing periodic early flushes solves the estimation problem by temporarily eliminating the uncompressed tail.
 
-Implementing a two-tiered flush system (soft vs. hard) balances size precision with compression efficiency. The soft flushes provide reasonably accurate mid-run estimates while preserving the ZSTD dictionary window for smaller arrays.
+Switching from a static soft flush (e.g., >250 items) to an **ordered cardinality flush** (top 10%) makes the system adaptively scale independent. Even if the most loaded segment only contains 15 contigs, the system will reliably flush a fixed fraction of the most volatile memory, ensuring the file size steps up progressively rather than spiking unpredictably at the end.
 
-The early stop threshold at 95% is required because `ForceFlushSegments()` cannot measure the global metadata (splitters, segment splitters) and the archive directory footer. These components are serialized exclusively during the `Close()` routine and account for several megabytes. The 5% margin safely absorbs this final metadata payload and the remaining memory tail, preventing the physical file from overshooting the user-defined limit.
+The early stop threshold at 95% is required because forced flushes cannot measure global metadata (splitters, segment splitters) and the archive directory footer. These components are serialized exclusively during the `Close()` routine. The 5% margin safely absorbs this final metadata payload, preventing the physical file from overshooting the user-defined limit.
 
 ### Limitations and Trade-offs
 
