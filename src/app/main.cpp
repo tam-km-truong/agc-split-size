@@ -179,7 +179,7 @@ bool CApplication::create_split()
         int hard_idx = 0;
         
         const double stop_threshold = 0.95;
-        const uint32_t soft_flush_threshold = execution_params.pack_cardinality() / 2;
+        const double soft_flush_fraction = 0.10;
 
         for (; input_id < execution_params.input_names.size();)
         {
@@ -209,7 +209,7 @@ bool CApplication::create_split()
                 if (execution_params.verbosity() > 0)
                     cerr << "Soft Milestone " << (soft_milestones[soft_idx] * 100) << "% reached. Executing soft flush...\n";
 
-                agc_c.SoftFlushSegments(execution_params.no_threads(), soft_flush_threshold);
+                agc_c.SoftFlushSegments(execution_params.no_threads(), soft_flush_fraction);
                 current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
                 if (execution_params.verbosity() > 0)

@@ -764,7 +764,7 @@ public:
 	uint64_t GetCurrentArchiveSizeEstimate();
 
 	void ForceFlushSegments(const uint32_t no_threads);
-	void SoftFlushSegments(const uint32_t no_threads, const uint32_t min_items);
+	void SoftFlushSegments(const uint32_t no_threads, const double top_fraction);
 };
 
 // EOF

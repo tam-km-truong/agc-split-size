@@ -16,6 +16,9 @@
 #include "agc_compressor.h"
 #include "agc_decompressor.h"
 
+#include <algorithm>
+#include <functional>
+
 #include <execution>
 #include <future>
 
@@ -2439,8 +2442,38 @@ void CAGCCompressor::ForceFlushSegments(const uint32_t n_t)
     out_archive->FlushOutBuffers();
 }
 
-void CAGCCompressor::SoftFlushSegments(const uint32_t n_t, const uint32_t min_items)
+void CAGCCompressor::SoftFlushSegments(const uint32_t n_t, const double top_fraction)
 {
+    // 1. Gather all unwritten sequence counts
+    vector<uint32_t> counts;
+    
+    seg_vec_mtx.lock();
+    for (const auto& seg : v_segments)
+    {
+        if (seg != nullptr)
+            counts.push_back(seg->get_unwritten_seqs_count());
+    }
+    seg_vec_mtx.unlock();
+
+    if (counts.empty())
+        return;
+
+    // 2. Find the dynamic threshold using O(N) partitioning
+    size_t target_idx = (size_t)(counts.size() * top_fraction);
+    if (target_idx >= counts.size()) 
+        target_idx = counts.size() - 1;
+
+    // nth_element reorganizes the vector so the element at target_idx is the correct threshold,
+    // and everything before it is greater than or equal to it.
+    std::nth_element(counts.begin(), counts.begin() + target_idx, counts.end(), std::greater<uint32_t>());
+    
+    uint32_t dynamic_threshold = counts[target_idx];
+
+    // Ensure empty segments are not flushed if the entire array is mostly empty
+    if (dynamic_threshold == 0)
+        dynamic_threshold = 1;
+
+    // 3. Delegate the flush to worker threads
     vector<thread> v_threads;
     v_threads.reserve(n_t);
 
@@ -2459,7 +2492,7 @@ void CAGCCompressor::SoftFlushSegments(const uint32_t n_t, const uint32_t min_it
                     break;
 
                 if (v_segments[j] != nullptr)
-                    v_segments[j]->flush_soft(zstd_ctx, min_items);
+                    v_segments[j]->flush_soft(zstd_ctx, dynamic_threshold);
             }
 
             ZSTD_freeCCtx(zstd_ctx);
