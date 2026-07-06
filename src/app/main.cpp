@@ -211,6 +211,9 @@ bool CApplication::create_split()
 
                 agc_c.SoftFlushSegments(execution_params.no_threads(), soft_flush_threshold);
                 current_size = agc_c.GetCurrentArchiveSizeEstimate();
+
+                if (execution_params.verbosity() > 0)
+                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
                 
                 ++soft_idx;
             }
@@ -223,6 +226,9 @@ bool CApplication::create_split()
 
                 agc_c.ForceFlushSegments(execution_params.no_threads());
                 current_size = agc_c.GetCurrentArchiveSizeEstimate();
+
+                if (execution_params.verbosity() > 0)
+                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
                 
                 ++hard_idx;
             }
