@@ -172,7 +172,7 @@ bool CApplication::create_split()
             return false;
         }
 
-// Define milestones
+        // Define milestones
         const double soft_milestones[] = {0.6, 0.7};
         const double hard_milestones[] = {0.8, 0.9};
         int soft_idx = 0;
@@ -190,9 +190,6 @@ bool CApplication::create_split()
 
             vector<pair<string, string>> one_sample;
             one_sample.emplace_back(sample_name, fn);
-
-            if (execution_params.verbosity() > 0)
-                cerr << "Adding " << fn << " to " << part_name << "\n";
 
             r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
 

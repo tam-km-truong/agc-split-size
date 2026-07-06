@@ -386,19 +386,21 @@ Several approaches were evaluated to estimate the final compressed footprint of 
 
 ## Final Solution and Rationale
 
-The estimation problem was resolved using a **Milestone-Based Forced Flush**.
+The estimation problem was resolved using a **Hybrid Milestone-Based Flush and Early Stop Threshold**.
 
 ### Implementation
 
-1. **Partial Flush Logic**: Added a `flush_partial()` method to `CSegment` that ZSTD-compresses and clears current memory vectors without tearing down the object's internal reference state.
-2. **Multithreaded Delegation**: Added `ForceFlushSegments()` to `CAGCCompressor` to distribute the partial flush across worker threads.
-3. **Milestone Loop**: Defined fractional capacity milestones (e.g., 0.80, 0.90, 0.95, 1.0) within `create_split`. When the naive archive size estimate crosses a milestone, the loop pauses and invokes `ForceFlushSegments()`. The file size is then re-measured.
+1. **Soft Flushes (`flush_soft`)**: Evaluated at early milestones (e.g., 60%, 70% of target size). This delegates a partial flush across worker threads but only forces compression on segments that are at least 50% full (e.g., ≥250 items). This tightens the size estimation gap without severely penalizing ZSTD compression efficiency for mostly empty segments.
+2. **Hard Flushes (`flush_partial`)**: Evaluated at late milestones (e.g., 80%, 90% of target size). This forces a complete flush of all uncompressed memory vectors to disk, guaranteeing an exact physical file size measurement at critical junctures before the target size is breached.
+3. **Early Stop Threshold**: The loop break condition evaluates against a 95% threshold (`0.95 * target_part_size`) rather than 100%.
 
 ### Rationale
 
 Predicting the precise compressed footprint of highly variable sequence data held in memory is mathematically non-trivial. Forcing an early flush solves the estimation problem by temporarily eliminating the uncompressed tail entirely.
 
-By limiting these forced flushes to specific target milestones, the implementation retains the performance benefits and block-size efficiency of the asynchronous batching architecture for the majority of the runtime. The I/O penalty and block fragmentation are restricted solely to the final percentages of the archive part's creation.
+Implementing a two-tiered flush system (soft vs. hard) balances size precision with compression efficiency. The soft flushes provide reasonably accurate mid-run estimates while preserving the ZSTD dictionary window for smaller arrays.
+
+The early stop threshold at 95% is required because `ForceFlushSegments()` cannot measure the global metadata (splitters, segment splitters) and the archive directory footer. These components are serialized exclusively during the `Close()` routine and account for several megabytes. The 5% margin safely absorbs this final metadata payload and the remaining memory tail, preventing the physical file from overshooting the user-defined limit.
 
 ### Limitations and Trade-offs
 
@@ -406,3 +408,5 @@ While the forced flush guarantees size accuracy, it introduces two specific pena
 
 1. **Degraded Compression Ratio**: ZSTD achieves its highest compression efficiency when operating on the full, optimal block size (`contigs_in_pack` = 500). When a forced flush is executed, thousands of segments prematurely compress smaller, partial blocks (e.g., 5 to 50 sequences). The reduced block sizes provide less historical data for the compressor's dictionary window, slightly reducing the overall compression ratio for those specific flushes.
 2. **Thread Synchronization and I/O Stalls**: The standard loop operates asynchronously without global blocking. `ForceFlushSegments()` forces a synchronization barrier where the main addition loop must pause while worker threads drain all segment memory arrays to disk. This causes brief spikes in I/O wait times and interrupts the CPU pipeline efficiency during the milestone checks.
+
+
