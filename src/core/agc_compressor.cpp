@@ -2439,4 +2439,35 @@ void CAGCCompressor::ForceFlushSegments(const uint32_t n_t)
     out_archive->FlushOutBuffers();
 }
 
+void CAGCCompressor::SoftFlushSegments(const uint32_t n_t, const uint32_t min_items)
+{
+    vector<thread> v_threads;
+    v_threads.reserve(n_t);
+
+    atomic<uint32_t> id_segment{0};
+
+    for (uint32_t i = 0; i < n_t; ++i)
+    {
+        v_threads.emplace_back([&] {
+            auto zstd_ctx = ZSTD_createCCtx();
+
+            while (true)
+            {
+                uint32_t j = id_segment.fetch_add(1);
+
+                if (j >= no_segments)
+                    break;
+
+                if (v_segments[j] != nullptr)
+                    v_segments[j]->flush_soft(zstd_ctx, min_items);
+            }
+
+            ZSTD_freeCCtx(zstd_ctx);
+        });
+    }
+
+    join_threads(v_threads);
+    out_archive->FlushOutBuffers();
+}
+
 // EOF

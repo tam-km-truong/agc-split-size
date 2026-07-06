@@ -172,9 +172,14 @@ bool CApplication::create_split()
             return false;
         }
 
-        // Define milestones (e.g., 80%, 90%, 95%, 100%)
-        const double milestones[] = {0.80, 0.90, 0.95, 1.0};
-        int milestone_idx = 0;
+// Define milestones
+        const double soft_milestones[] = {0.6, 0.7};
+        const double hard_milestones[] = {0.8, 0.9};
+        int soft_idx = 0;
+        int hard_idx = 0;
+        
+        const double stop_threshold = 0.95;
+        const uint32_t soft_flush_threshold = execution_params.pack_cardinality() / 2;
 
         for (; input_id < execution_params.input_names.size();)
         {
@@ -185,6 +190,9 @@ bool CApplication::create_split()
 
             vector<pair<string, string>> one_sample;
             one_sample.emplace_back(sample_name, fn);
+
+            if (execution_params.verbosity() > 0)
+                cerr << "Adding " << fn << " to " << part_name << "\n";
 
             r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
 
@@ -198,27 +206,34 @@ bool CApplication::create_split()
 
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
-            // Check if a milestone is reached. Use a while loop in case 
-            // a single sample addition crosses multiple milestones.
-            while (milestone_idx < 5 && current_size >= (execution_params.target_part_size * milestones[milestone_idx]))
+            // Evaluate Soft Milestones
+            while (soft_idx < 2 && current_size >= (execution_params.target_part_size * soft_milestones[soft_idx]))
             {
                 if (execution_params.verbosity() > 0)
-                    cerr << "Milestone " << (milestones[milestone_idx] * 100) << "% reached. Forcing flush...\n";
+                    cerr << "Soft Milestone " << (soft_milestones[soft_idx] * 100) << "% reached. Executing soft flush...\n";
 
-                // Force flush memory buffers to disk to get exact size
+                agc_c.SoftFlushSegments(execution_params.no_threads(), soft_flush_threshold);
+                current_size = agc_c.GetCurrentArchiveSizeEstimate();
+                
+                ++soft_idx;
+            }
+
+            // Evaluate Hard Milestones
+            while (hard_idx < 2 && current_size >= (execution_params.target_part_size * hard_milestones[hard_idx]))
+            {
+                if (execution_params.verbosity() > 0)
+                    cerr << "Hard Milestone " << (hard_milestones[hard_idx] * 100) << "% reached. Forcing full flush...\n";
+
                 agc_c.ForceFlushSegments(execution_params.no_threads());
                 current_size = agc_c.GetCurrentArchiveSizeEstimate();
                 
-                if (execution_params.verbosity() > 0)
-                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
-
-                ++milestone_idx;
+                ++hard_idx;
             }
 
-            if (current_size >= execution_params.target_part_size)
+            // Evaluate Stop Condition
+            if (current_size >= (execution_params.target_part_size * stop_threshold))
                 break;
         }
-
         if (execution_params.store_cmd_line)
             agc_c.AddCmdLine(cmd_line);
 

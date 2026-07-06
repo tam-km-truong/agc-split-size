@@ -336,7 +336,10 @@ public:
     size_t get_ref_size() const;
 
     void appending_init();
+    //flush all current segment groups but not closing the archive
     void flush_partial(ZSTD_CCtx* zstd_ctx);
+    //flush only the segment groups that have more than a certain items
+    void flush_soft(ZSTD_CCtx* zstd_ctx, uint32_t min_items);
 };
 
 // EOF

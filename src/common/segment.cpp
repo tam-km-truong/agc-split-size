@@ -593,4 +593,21 @@ void CSegment::flush_partial(ZSTD_CCtx* zstd_ctx)
     }
 }
 
+void CSegment::flush_soft(ZSTD_CCtx* zstd_ctx, uint32_t min_items)
+{
+    lock_guard<mutex> lck(mtx);
+
+    if (v_lzp.size() >= min_items)
+    {
+        store_in_archive(v_lzp, zstd_ctx);
+        v_lzp.clear();
+    }
+    
+    if (v_raw.size() >= min_items)
+    {
+        store_in_archive(v_raw, zstd_ctx);
+        v_raw.clear();
+    }
+}
+
 // EOF
