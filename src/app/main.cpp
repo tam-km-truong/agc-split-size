@@ -240,7 +240,7 @@ bool CApplication::create_split()
             }
 
             // Terminal Braking Phase: Prevent overshoot between 90% and 95%
-            if (current_size >= (execution_params.target_part_size * terminal_phase_threshold))
+            if (current_size >= (execution_params.target_part_size * terminal_phase_threshold) && current_size <= (execution_params.target_part_size * stop_threshold))
             {
                 if (samples_since_flush >= terminal_flush_interval)
                 {
