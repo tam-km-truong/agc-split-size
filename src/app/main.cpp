@@ -181,6 +181,11 @@ bool CApplication::create_split()
         const double stop_threshold = 0.95;
         const double soft_flush_fraction = 0.10;
 
+        // Terminal braking phase variables
+        const double terminal_phase_threshold = hard_milestones[1]; 
+        const int terminal_flush_interval = 10;
+        int samples_since_flush = 0;
+
         for (; input_id < execution_params.input_names.size();)
         {
             const string& fn = execution_params.input_names[input_id];
@@ -200,6 +205,7 @@ bool CApplication::create_split()
             }
 
             ++input_id;
+            ++samples_since_flush;
 
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
@@ -231,6 +237,20 @@ bool CApplication::create_split()
                     cerr << "Post-flush archive size: " << current_size << " bytes\n";
                 
                 ++hard_idx;
+            }
+
+            // Terminal Braking Phase: Prevent overshoot between 90% and 95%
+            if (current_size >= (execution_params.target_part_size * terminal_phase_threshold))
+            {
+                if (samples_since_flush >= terminal_flush_interval)
+                {
+                    if (execution_params.verbosity() > 0)
+                        cerr << "Terminal phase: Forcing interval flush (" << terminal_flush_interval << " samples)...\n";
+                        
+                    agc_c.ForceFlushSegments(execution_params.no_threads());
+                    current_size = agc_c.GetCurrentArchiveSizeEstimate();
+                    samples_since_flush = 0;
+                }
             }
 
             // Evaluate Stop Condition
