@@ -2488,7 +2488,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
 
     // Threshold limits
     uint64_t stop_threshold = (target_part_size * 95) / 100;
-    uint64_t strict_threshold = (target_part_size * 75) / 100;
+    uint64_t strict_threshold = (target_part_size * 85) / 100;
     
     bool strict_mode = false;
     size_t genomes_since_last_check = 0;
@@ -2567,8 +2567,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         samples_consumed++;
 
         // 1. Periodic Synchronization
-        // Prevent raw data backlogs globally (every 50 genomes)
-        if (samples_consumed % 50 == 0)
+        // Prevent raw data backlogs globally (every 25 genomes)
+        if (samples_consumed % 25 == 0)
         {
             while (!pq_contigs_desc->IsEmpty())
             {
@@ -2585,8 +2585,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         // 2. Determine if a precise size check is required
         if (strict_mode)
         {
-            // Strict mode: check exactly every 10 genomes
-            if (genomes_since_last_check >= 10)
+            // Strict mode: check exactly every 5 genomes
+            if (genomes_since_last_check >= 5)
             {
                 run_check = true;
             }
@@ -2630,7 +2630,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
             if (true_size >= strict_threshold && !strict_mode)
             {
                 if (verbosity > 0)
-                    cerr << "Strict threshold crossed. Switching to 10-genome batch checks.\n";
+                    cerr << "Strict threshold crossed. Switching to 5-genome batch checks.\n";
                 strict_mode = true;
             }
 
