@@ -175,7 +175,6 @@ bool CApplication::create_split()
         // Define milestones
         const double milestones[] = {0.60, 0.70, 0.80, 0.90};
         int milestone_idx = 0;
-        const double stop_threshold = 0.95;
         
 
         for (; input_id < execution_params.input_names.size();)
@@ -199,6 +198,9 @@ bool CApplication::create_split()
             ++input_id;
 
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
+            
+            if (execution_params.verbosity() > 0)
+                cerr << "Current estimated archive size: " << current_size << " bytes\n";
 
             if (milestone_idx >= 4)
             {
@@ -212,13 +214,15 @@ bool CApplication::create_split()
                 
                 // Re-check against the milestone using the highly precise size
                 if (current_size < (execution_params.target_part_size * milestones[milestone_idx]))
+                    if (execution_params.verbosity() > 0)
+                    cerr << "Current estimated archive size: " << current_size << " bytes\n";
                     break; // Simulation revealed we are actually below the milestone. Resume additions.
 
                 ++milestone_idx;
             }
 
             // Evaluate Stop Condition
-            if (current_size >= (execution_params.target_part_size * stop_threshold))
+            if (current_size >= (execution_params.target_part_size))
                 break;
         }
         if (execution_params.store_cmd_line)
