@@ -201,29 +201,6 @@ bool CApplication::create_split()
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
             cerr << "Current estimated archive size: " << current_size << " bytes\n";
 
-            if (milestone_idx >= 4)
-            {
-                current_size = agc_c.GetSimulatedArchiveSize(execution_params.no_threads());
-            }
-
-            // If the fast check passes a milestone, halt and measure precisely
-            while (milestone_idx < 4 && current_size >= (execution_params.target_part_size * milestones[milestone_idx]))
-            {
-
-                if (execution_params.verbosity() > 0)
-                cerr << "Current estimated archive size: " << current_size << " bytes\n";
-
-                current_size = agc_c.GetSimulatedArchiveSize(execution_params.no_threads());
-                
-                // Re-check against the milestone using the highly precise size
-                if (current_size < (execution_params.target_part_size * milestones[milestone_idx]))
-                    if (execution_params.verbosity() > 0)
-                        cerr << "Current simulated archive size: " << current_size << " bytes\n";
-                    break; // Simulation revealed we are actually below the milestone. Resume additions.
-
-                ++milestone_idx;
-            }
-
             // Evaluate Stop Condition
             if (current_size >= (execution_params.target_part_size * stop_threshold))
                 break;
