@@ -146,7 +146,7 @@ bool CApplication::create_split()
         const string reference_file = execution_params.input_names[input_id];
 
         if (execution_params.verbosity() > 0)
-            cerr << "Creating " << part_name << " with reference " << reference_file << "\n";
+            cerr << "Creating-split mode; currently " << part_name << " with reference " << reference_file << "\n";
 
         CAGCCompressor agc_c;
 
