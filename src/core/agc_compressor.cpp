@@ -2560,8 +2560,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         // Naive size check
         uint64_t current_size = GetCurrentArchiveSizeEstimate();
         if (verbosity > 0)
-            cerr << "Current size: " << current_size << " bytes.\n";
-        break;        
+            cerr << "Current size: " << current_size << " bytes.\n";      
 
         if (current_size >= target_part_size)
         {
