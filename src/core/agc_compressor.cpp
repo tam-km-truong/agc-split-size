@@ -2486,6 +2486,13 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
     // Set initial offset to 40% to trigger the first check at 60% milestone
     uint64_t buffer_offset = (target_part_size * 40) / 100;
 
+    // Threshold limits
+    uint64_t stop_threshold = (target_part_size * 95) / 100;
+    uint64_t strict_threshold = (target_part_size * 75) / 100;
+    
+    bool strict_mode = false;
+    size_t genomes_since_last_check = 0;
+
     for(const auto& current_sf : _v_sample_file_name)
     {
         if (archive_version >= 3000)
@@ -2560,7 +2567,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         samples_consumed++;
 
         // 1. Periodic Synchronization
-        if (samples_consumed % 25 == 0)
+        // Prevent raw data backlogs globally (every 50 genomes)
+        if (samples_consumed % 50 == 0)
         {
             while (!pq_contigs_desc->IsEmpty())
             {
@@ -2568,13 +2576,32 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
             }
         }
 
-        // Naive size check
         uint64_t naive_size = GetCurrentArchiveSizeEstimate();
+        bool run_check = false;
+
         if (verbosity > 3)
             cerr << "Current size: " << naive_size << " bytes.\n";  
+
+        // 2. Determine if a precise size check is required
+        if (strict_mode)
+        {
+            // Strict mode: check exactly every 10 genomes
+            if (genomes_since_last_check >= 10)
+            {
+                run_check = true;
+            }
+        }
+        else
+        {
+            // Standard mode: trigger check if the estimated true size crosses the 75% threshold
+            if (naive_size + buffer_offset >= strict_threshold)
+            {
+                run_check = true;
+            }
+        }
             
-        // Check if disk size + estimated buffer exceeds the target
-        if (naive_size + buffer_offset >= target_part_size)
+        // 3. Execute the precise check
+        if (run_check)
         {
             // Halt reading and wait for worker threads to empty the queue
             while (!pq_contigs_desc->IsEmpty())
@@ -2582,40 +2609,42 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
-            // Re-measure naive size now that the queue is empty
             naive_size = GetCurrentArchiveSizeEstimate();
-
-            // Run precise ZSTD simulation on the static segment buffers
             uint64_t true_size = GetSimulatedArchiveSize(no_threads);
 
             if (verbosity > 0)
             {
                 cerr << "Size check - Naive (Disk): " << naive_size 
-                     << " bytes, True (Disk+Buffers): " << true_size << " bytes\n";
+                     << " bytes, Simulated (Disk+Buffers): " << true_size << " bytes\n";
             }
 
-            if (true_size >= target_part_size)
+            // Final Stop Condition (95% of target)
+            if (true_size >= stop_threshold)
             {
                 if (verbosity > 0)
-                    cerr << "Target size reached (" << true_size << " bytes). Finalizing part...\n";
+                    cerr << "Stop threshold reached (" << true_size << " bytes). Finalizing part...\n";
                 break;
             }
 
-            // Recalibrate the offset based on the exact size of the memory buffers
-            if (true_size > naive_size)
+            // Strict Mode Activation (75% of target)
+            if (true_size >= strict_threshold && !strict_mode)
             {
-                buffer_offset = true_size - naive_size;
+                if (verbosity > 0)
+                    cerr << "Strict threshold crossed. Switching to 10-genome batch checks.\n";
+                strict_mode = true;
             }
-            else
-            {
-                buffer_offset = 0; 
-            }
+
+            // Recalibrate variables for the next loop
+            buffer_offset = (true_size > naive_size) ? (true_size - naive_size) : 0;
+            genomes_since_last_check = 0;
         }
 
+        // 4. Absolute Emergency Brake
+        // Catches edge cases where a single file is massive enough to blow past the 95% threshold entirely
         if (naive_size >= target_part_size)
         {
             if (verbosity > 0)
-                cerr << "Target size reached (" << naive_size << " bytes). Finalizing part...\n";
+                cerr << "Absolute target size reached (" << naive_size << " bytes). Finalizing part...\n";
             break;
         }
     }
