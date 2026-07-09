@@ -199,6 +199,7 @@ bool CApplication::create_split()
             ++input_id;
 
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
+            cerr << "Current estimated archive size: " << current_size << " bytes\n";
 
             if (milestone_idx >= 4)
             {
