@@ -172,13 +172,10 @@ bool CApplication::create_split()
             return false;
         }
 
-        // Define milestones
-        const double milestones[] = {0.60, 0.70, 0.80, 0.90};
-        int milestone_idx = 0;
-        const double stop_threshold = 0.95;
-        
+        // Advance past the reference file so it isn't added as a standard sample
         ++input_id;
 
+        // Add samples until the target size is reached
         for (; input_id < execution_params.input_names.size();)
         {
             const string& fn = execution_params.input_names[input_id];
@@ -188,6 +185,9 @@ bool CApplication::create_split()
 
             vector<pair<string, string>> one_sample;
             one_sample.emplace_back(sample_name, fn);
+
+            if (execution_params.verbosity() > 0)
+                cerr << "Adding " << fn << " to " << part_name << "\n";
 
             r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
 
@@ -199,36 +199,18 @@ bool CApplication::create_split()
 
             ++input_id;
 
+            // Simple threshold check
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
             cerr << "Current estimated archive size: " << current_size << " bytes\n";
 
-            if (milestone_idx >= 4)
+            if (current_size >= execution_params.target_part_size)
             {
-                current_size = agc_c.GetSimulatedArchiveSize(execution_params.no_threads());
-            }
-
-            // If the fast check passes a milestone, halt and measure precisely
-            while (milestone_idx < 4 && current_size >= (execution_params.target_part_size * milestones[milestone_idx]))
-            {
-
                 if (execution_params.verbosity() > 0)
-                    cerr << "Current estimated archive size: " << current_size << " bytes\n";
-
-                current_size = agc_c.GetSimulatedArchiveSize(execution_params.no_threads());
-                
-                // Re-check against the milestone using the highly precise size
-                if (current_size < (execution_params.target_part_size * milestones[milestone_idx]))
-                    if (execution_params.verbosity() > 0)
-                        cerr << "Current simulated archive size: " << current_size << " bytes\n";
-                    break; // Simulation revealed we are actually below the milestone. Resume additions.
-
-                ++milestone_idx;
-            }
-
-            // Evaluate Stop Condition
-            if (current_size >= (execution_params.target_part_size * stop_threshold))
+                    cerr << "Target size reached. Closing part " << part_name << "\n";
                 break;
+            }
         }
+
         if (execution_params.store_cmd_line)
             agc_c.AddCmdLine(cmd_line);
 
