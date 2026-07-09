@@ -2557,6 +2557,15 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         gio.Close();
         samples_consumed++;
 
+        // 1. Periodic Synchronization
+        if (samples_consumed % 10 == 0)
+        {
+            while (!pq_contigs_desc->IsEmpty())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }
+
         // Naive size check
         uint64_t current_size = GetCurrentArchiveSizeEstimate();
         if (verbosity > 0)
