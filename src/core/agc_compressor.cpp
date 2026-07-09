@@ -2483,6 +2483,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
 
     size_t num_empty_input = 0; 
     size_t samples_consumed = 0;
+    // Set initial offset to 40% to trigger the first check at 60% milestone
+    uint64_t buffer_offset = (target_part_size * 40) / 100;
 
     for(const auto& current_sf : _v_sample_file_name)
     {
@@ -2558,7 +2560,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         samples_consumed++;
 
         // 1. Periodic Synchronization
-        if (samples_consumed % 10 == 0)
+        if (samples_consumed % 25 == 0)
         {
             while (!pq_contigs_desc->IsEmpty())
             {
@@ -2567,14 +2569,53 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         }
 
         // Naive size check
-        uint64_t current_size = GetCurrentArchiveSizeEstimate();
-        if (verbosity > 0)
-            cerr << "Current size: " << current_size << " bytes.\n";      
+        uint64_t naive_size = GetCurrentArchiveSizeEstimate();
+        if (verbosity > 3)
+            cerr << "Current size: " << naive_size << " bytes.\n";  
+            
+        // Check if disk size + estimated buffer exceeds the target
+        if (naive_size + buffer_offset >= target_part_size)
+        {
+            // Halt reading and wait for worker threads to empty the queue
+            while (!pq_contigs_desc->IsEmpty())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            
+            // Re-measure naive size now that the queue is empty
+            naive_size = GetCurrentArchiveSizeEstimate();
 
-        if (current_size >= target_part_size)
+            // Run precise ZSTD simulation on the static segment buffers
+            uint64_t true_size = GetSimulatedArchiveSize(no_threads);
+
+            if (verbosity > 0)
+            {
+                cerr << "Size check - Naive (Disk): " << naive_size 
+                     << " bytes, True (Disk+Buffers): " << true_size << " bytes\n";
+            }
+
+            if (true_size >= target_part_size)
+            {
+                if (verbosity > 0)
+                    cerr << "Target size reached (" << true_size << " bytes). Finalizing part...\n";
+                break;
+            }
+
+            // Recalibrate the offset based on the exact size of the memory buffers
+            if (true_size > naive_size)
+            {
+                buffer_offset = true_size - naive_size;
+            }
+            else
+            {
+                buffer_offset = 0; 
+            }
+        }
+
+        if (naive_size >= target_part_size)
         {
             if (verbosity > 0)
-                cerr << "Target size reached (" << current_size << " bytes). Finalizing part...\n";
+                cerr << "Target size reached (" << naive_size << " bytes). Finalizing part...\n";
             break;
         }
     }
