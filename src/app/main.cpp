@@ -139,6 +139,9 @@ bool CApplication::create_split()
 
     uint32_t part_id = 1;
     size_t input_id = 0;
+    
+    // Set the static split threshold
+    const uint32_t MAX_GENOMES_PER_PART = 100; 
 
     while (input_id < execution_params.input_names.size())
     {
@@ -172,11 +175,12 @@ bool CApplication::create_split()
             return false;
         }
 
-        // Advance past the reference file so it isn't added as a standard sample
+        // The reference file counts as the first genome in this part
+        uint32_t genomes_in_part = 1;
         ++input_id;
 
-        // Add samples until the target size is reached
-        for (; input_id < execution_params.input_names.size();)
+        // Add samples until the count threshold is reached or inputs are exhausted
+        for (; input_id < execution_params.input_names.size() && genomes_in_part < MAX_GENOMES_PER_PART;)
         {
             const string& fn = execution_params.input_names[input_id];
 
@@ -198,17 +202,7 @@ bool CApplication::create_split()
             }
 
             ++input_id;
-
-            // Simple threshold check
-            uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
-            cerr << "Current estimated archive size: " << current_size << " bytes\n";
-
-            if (current_size >= execution_params.target_part_size)
-            {
-                if (execution_params.verbosity() > 0)
-                    cerr << "Target size reached. Closing part " << part_name << "\n";
-                break;
-            }
+            ++genomes_in_part;
         }
 
         if (execution_params.store_cmd_line)
