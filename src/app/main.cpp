@@ -139,9 +139,6 @@ bool CApplication::create_split()
 
     uint32_t part_id = 1;
     size_t input_id = 0;
-    
-    // Set the static split threshold
-    const uint32_t MAX_GENOMES_PER_PART = 100; 
 
     while (input_id < execution_params.input_names.size())
     {
@@ -149,10 +146,7 @@ bool CApplication::create_split()
         const string reference_file = execution_params.input_names[input_id];
 
         if (execution_params.verbosity() > 0)
-        {
-            cerr << "Creating " << part_name
-                << " with reference " << reference_file << "\n";
-        }
+            cerr << "Creating " << part_name << " with reference " << reference_file << "\n";
 
         CAGCCompressor agc_c;
 
@@ -175,37 +169,20 @@ bool CApplication::create_split()
             return false;
         }
 
-        // The reference file counts as the first genome in this part
-        uint32_t genomes_in_part = 1;
-        ++input_id;
-
-        // Add samples until the count threshold is reached or inputs are exhausted
-        for (; input_id < execution_params.input_names.size() && genomes_in_part < MAX_GENOMES_PER_PART;)
+        vector<pair<string, string>> v_remaining_samples;
+        for (size_t i = input_id; i < execution_params.input_names.size(); ++i)
         {
-            const string& fn = execution_params.input_names[input_id];
-
+            const string& fn = execution_params.input_names[i];
             string sample_name = std::filesystem::path(fn).stem().string();
             remove_common_suffixes(sample_name);
-
-            vector<pair<string, string>> one_sample;
-            one_sample.emplace_back(sample_name, fn);
-
-            if (execution_params.verbosity() > 0)
-                cerr << "Adding " << fn << " to " << part_name << "\n";
-
-            r &= agc_c.AddSampleFiles(one_sample, execution_params.no_threads());
-
-            if (!r)
-            {
-                cerr << "Cannot add sample " << fn << " to " << part_name << endl;
-                return false;
-            }
-
-            ++input_id;
-            ++genomes_in_part;
+            v_remaining_samples.emplace_back(sample_name, fn);
         }
 
-        if (execution_params.store_cmd_line)
+        size_t consumed_count = 0;
+        if (r)
+            consumed_count = agc_c.AddSampleSplit(v_remaining_samples, execution_params.no_threads(), execution_params.target_part_size);
+
+        if (r && execution_params.store_cmd_line)
             agc_c.AddCmdLine(cmd_line);
 
         r &= agc_c.Close(execution_params.no_threads());
@@ -216,6 +193,7 @@ bool CApplication::create_split()
             return false;
         }
 
+        input_id += consumed_count;
         ++part_id;
     }
 

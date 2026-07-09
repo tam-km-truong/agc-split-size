@@ -2445,4 +2445,154 @@ uint64_t CAGCCompressor::GetSimulatedArchiveSize(const uint32_t n_t)
     
     return out_archive->GetCurrentOffset() + total_unwritten_compressed.load();
 }
+
+size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size)
+{
+    if (_v_sample_file_name.empty())
+        return true;
+
+    processed_bases = 0;
+    size_t queue_capacity = max(2ull << 30, no_threads * (192ull << 20));
+
+    pq_contigs_desc = make_shared<CBoundedPQueue<task_t>>(1, queue_capacity);
+    pq_contigs_desc_aux = make_shared<CBoundedPQueue<task_t>>(1, ~0ull);
+    pq_contigs_desc_working = pq_contigs_desc;
+
+    uint32_t no_workers = (no_threads < 8) ? no_threads : no_threads - 1;
+
+    vector<thread> v_threads;
+    v_threads.reserve((size_t)no_workers);
+
+    my_barrier bar(no_workers);
+    start_compressing_threads(v_threads, bar, no_workers);
+
+    CGenomeIO gio;
+    string id;
+    contig_t contig;
+    size_t sample_priority = ~0ull;
+    size_t cnt_contigs_in_sample = 0;
+    const size_t max_no_contigs_before_synchronization = pack_cardinality;
+
+    if (archive_version >= 3000 && in_archive != nullptr)
+        processed_samples = (uint32_t) dynamic_pointer_cast<CCollection_V3>(collection_desc)->get_no_samples();
+    else
+        processed_samples = 0;
+
+    if (concatenated_genomes)
+        cnt_contigs_in_sample = processed_samples % pack_cardinality;
+
+    size_t num_empty_input = 0; 
+    size_t samples_consumed = 0;
+
+    for(const auto& current_sf : _v_sample_file_name)
+    {
+        if (archive_version >= 3000)
+            dynamic_pointer_cast<CCollection_V3>(collection_desc)->reset_prev_sample_name();
+
+        if (!gio.Open(current_sf.second, false))
+        {
+            cerr << "Cannot open file: " << current_sf.second << endl;
+            samples_consumed++;
+            continue;
+        }
+
+        bool any_contigs_read = false;
+        bool any_contigs_added = false;
+        
+        while (gio.ReadContigRaw(id, contig))
+        {
+            if (concatenated_genomes)
+            {
+                if (!collection_desc->register_sample_contig("", id))
+                    cerr << "Error: Pair sample_name:contig_name " << id << ":" << id << " is already in the archive!\n";
+                else
+                {
+                    auto cost = contig.size();
+                    pq_contigs_desc->Emplace(make_tuple(contig_processing_stage_t::all_contigs, "", id, move(contig)), sample_priority, cost);
+                    contig.clear();
+
+                    if (++cnt_contigs_in_sample >= max_no_contigs_before_synchronization)
+                    {
+                        pq_contigs_desc->EmplaceManyNoCost(make_tuple(
+                            adaptive_compression ? contig_processing_stage_t::new_splitters : contig_processing_stage_t::registration, "", "", contig_t()), sample_priority, no_workers);
+
+                        cnt_contigs_in_sample = 0;
+                        --sample_priority;
+                    }
+                    any_contigs_added = true;
+                }
+            }
+            else
+            {
+                if (collection_desc->register_sample_contig(current_sf.first, id))
+                {
+                    auto cost = contig.size();
+                    pq_contigs_desc->Emplace(make_tuple(contig_processing_stage_t::all_contigs, current_sf.first, id, move(contig)), sample_priority, cost);
+                    contig.clear();
+                    any_contigs_added = true;
+                }
+                else
+                    cerr << "Error: Pair sample_name:contig_name " << current_sf.first << ":" << id << " is already in the archive!\n";
+            }
+            any_contigs_read = true;
+        }
+
+        if (!any_contigs_read) 
+            cerr << "Warning: Pair sample_name:file_path " << current_sf.first << ":" << current_sf.second << " contains no contigs and will not be included in the archive!\n";
+
+        if (!any_contigs_added) 
+        {
+            cerr << "Warning: Pair sample_name:file_path " << current_sf.first << ":" << current_sf.second << " contains only contigs already present in the archive!\n";
+            ++num_empty_input;
+        }
+
+        if (!concatenated_genomes && any_contigs_added)
+        {
+            pq_contigs_desc->EmplaceManyNoCost(make_tuple(
+                adaptive_compression ? contig_processing_stage_t::new_splitters : contig_processing_stage_t::registration,
+                "", "", contig_t()), sample_priority, no_workers);
+            --sample_priority;
+        }
+
+        gio.Close();
+        samples_consumed++;
+
+        // Naive size check
+        uint64_t current_size = GetCurrentArchiveSizeEstimate();
+
+        if (current_size >= target_part_size)
+        {
+            if (verbosity > 0)
+                cerr << "Target size reached (" << current_size << " bytes). Finalizing part...\n";
+            break;
+        }
+    }
+
+    if (concatenated_genomes)
+    {
+        pq_contigs_desc->EmplaceManyNoCost(make_tuple(
+            adaptive_compression ? contig_processing_stage_t::new_splitters : contig_processing_stage_t::registration, "", "", contig_t()), sample_priority, no_workers);
+        cnt_contigs_in_sample = 0;
+        --sample_priority;
+    }
+
+    pq_contigs_desc->MarkCompleted();
+    join_threads(v_threads);
+
+    if(concatenated_genomes)
+        processed_samples = (uint32_t) dynamic_pointer_cast<CCollection_V3>(collection_desc)->get_no_samples();
+
+    if (archive_version >= 3000 && processed_samples % pack_cardinality != 0)
+        dynamic_pointer_cast<CCollection_V3>(collection_desc)->store_contig_batch((processed_samples / pack_cardinality) * pack_cardinality, processed_samples);
+
+    out_archive->FlushOutBuffers();
+
+    pq_contigs_desc.reset();
+    pq_contigs_desc_aux.reset();
+    pq_contigs_desc_working.reset();
+
+    no_samples_in_archive += samples_consumed - num_empty_input;
+
+    return samples_consumed;
+}
 // EOF
