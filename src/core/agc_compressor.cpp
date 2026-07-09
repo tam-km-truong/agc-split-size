@@ -2449,7 +2449,7 @@ uint64_t CAGCCompressor::GetSimulatedArchiveSize(const uint32_t n_t)
 size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size)
 {
     if (_v_sample_file_name.empty())
-        return true;
+        return 0;
 
     processed_bases = 0;
     size_t queue_capacity = max(2ull << 30, no_threads * (192ull << 20));
@@ -2488,7 +2488,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
 
     // Threshold limits
     uint64_t stop_threshold = (target_part_size * 95) / 100;
-    uint64_t strict_threshold = (target_part_size * 85) / 100;
+    uint64_t strict_threshold = (target_part_size * 75) / 100;
     
     bool strict_mode = false;
     size_t genomes_since_last_check = 0;
@@ -2565,6 +2565,7 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
 
         gio.Close();
         samples_consumed++;
+        genomes_since_last_check++;
 
         // 1. Periodic Synchronization
         // Prevent raw data backlogs globally (every 25 genomes)
