@@ -596,7 +596,7 @@ uint32_t CSegment::simulate_store(const vector<contig_t>& v_data, ZSTD_CCtx* zst
 
     // Look at store_in_archive() to see what it uses for the final argument here.
     // Replace `this->compression_level` with the exact variable store_in_archive uses.
-    uint32_t packed_size = (uint32_t) ZSTD_compressCCtx(zstd_ctx, packed.data(), a_size, buffer.data(), buffer.size(), this->compression_level);
+    uint32_t packed_size = (uint32_t) ZSTD_compressCCtx(zstd_ctx, packed.data(), a_size, buffer.data(), buffer.size(), 19);
     
     return packed_size;
 }
