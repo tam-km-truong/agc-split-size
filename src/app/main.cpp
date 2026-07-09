@@ -173,18 +173,10 @@ bool CApplication::create_split()
         }
 
         // Define milestones
-        const double soft_milestones[] = {0.6, 0.7};
-        const double hard_milestones[] = {0.8, 0.9};
-        int soft_idx = 0;
-        int hard_idx = 0;
-        
+        const double milestones[] = {0.60, 0.70, 0.80, 0.90};
+        int milestone_idx = 0;
         const double stop_threshold = 0.95;
-        const double soft_flush_fraction = 0.10;
-
-        // Terminal braking phase variables
-        const double terminal_phase_threshold = hard_milestones[1]; 
-        const int terminal_flush_interval = 10;
-        int samples_since_flush = 0;
+        
 
         for (; input_id < execution_params.input_names.size();)
         {
@@ -205,52 +197,19 @@ bool CApplication::create_split()
             }
 
             ++input_id;
-            ++samples_since_flush;
 
             uint64_t current_size = agc_c.GetCurrentArchiveSizeEstimate();
 
-            // Evaluate Soft Milestones
-            while (soft_idx < 2 && current_size >= (execution_params.target_part_size * soft_milestones[soft_idx]))
+            // If the fast check passes a milestone, halt and measure precisely
+            while (milestone_idx < 4 && current_size >= (execution_params.target_part_size * milestones[milestone_idx]))
             {
-                if (execution_params.verbosity() > 0)
-                    cerr << "Soft Milestone " << (soft_milestones[soft_idx] * 100) << "% reached. Executing soft flush...\n";
-
-                agc_c.SoftFlushSegments(execution_params.no_threads(), soft_flush_fraction);
-                current_size = agc_c.GetCurrentArchiveSizeEstimate();
-
-                if (execution_params.verbosity() > 0)
-                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
+                current_size = agc_c.GetSimulatedArchiveSize(execution_params.no_threads());
                 
-                ++soft_idx;
-            }
+                // Re-check against the milestone using the highly precise size
+                if (current_size < (execution_params.target_part_size * milestones[milestone_idx]))
+                    break; // Simulation revealed we are actually below the milestone. Resume additions.
 
-            // Evaluate Hard Milestones
-            while (hard_idx < 2 && current_size >= (execution_params.target_part_size * hard_milestones[hard_idx]))
-            {
-                if (execution_params.verbosity() > 0)
-                    cerr << "Hard Milestone " << (hard_milestones[hard_idx] * 100) << "% reached. Forcing full flush...\n";
-
-                agc_c.ForceFlushSegments(execution_params.no_threads());
-                current_size = agc_c.GetCurrentArchiveSizeEstimate();
-
-                if (execution_params.verbosity() > 0)
-                    cerr << "Post-flush archive size: " << current_size << " bytes\n";
-                
-                ++hard_idx;
-            }
-
-            // Terminal Braking Phase: Prevent overshoot between 90% and 95%
-            if (current_size >= (execution_params.target_part_size * terminal_phase_threshold) && current_size <= (execution_params.target_part_size * stop_threshold))
-            {
-                if (samples_since_flush >= terminal_flush_interval)
-                {
-                    if (execution_params.verbosity() > 0)
-                        cerr << "Terminal phase: Forcing interval flush (" << terminal_flush_interval << " samples)...\n";
-                        
-                    agc_c.ForceFlushSegments(execution_params.no_threads());
-                    current_size = agc_c.GetCurrentArchiveSizeEstimate();
-                    samples_since_flush = 0;
-                }
+                ++milestone_idx;
             }
 
             // Evaluate Stop Condition

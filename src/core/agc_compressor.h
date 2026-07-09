@@ -763,8 +763,7 @@ public:
 	bool AddSampleFiles(vector<pair<string, string>> _v_sample_file_name, const uint32_t _no_threads);
 	uint64_t GetCurrentArchiveSizeEstimate();
 
-	void ForceFlushSegments(const uint32_t no_threads);
-	void SoftFlushSegments(const uint32_t no_threads, const double top_fraction);
+	uint64_t GetSimulatedArchiveSize(const uint32_t no_threads);
 };
 
 // EOF

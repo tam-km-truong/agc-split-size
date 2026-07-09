@@ -2411,8 +2411,9 @@ uint64_t CAGCCompressor::GetCurrentArchiveSizeEstimate()
     return static_cast<uint64_t>(out_archive->GetCurrentOffset());
 }
 
-void CAGCCompressor::ForceFlushSegments(const uint32_t n_t)
+uint64_t CAGCCompressor::GetSimulatedArchiveSize(const uint32_t n_t)
 {
+    atomic<uint64_t> total_unwritten_compressed{0};
     vector<thread> v_threads;
     v_threads.reserve(n_t);
 
@@ -2422,6 +2423,7 @@ void CAGCCompressor::ForceFlushSegments(const uint32_t n_t)
     {
         v_threads.emplace_back([&] {
             auto zstd_ctx = ZSTD_createCCtx();
+            uint64_t local_sum = 0;
 
             while (true)
             {
@@ -2431,76 +2433,16 @@ void CAGCCompressor::ForceFlushSegments(const uint32_t n_t)
                     break;
 
                 if (v_segments[j] != nullptr)
-                    v_segments[j]->flush_partial(zstd_ctx);
+                    local_sum += v_segments[j]->estimate_partial_compressed_size(zstd_ctx);
             }
 
+            total_unwritten_compressed += local_sum;
             ZSTD_freeCCtx(zstd_ctx);
         });
     }
 
     join_threads(v_threads);
-    out_archive->FlushOutBuffers();
-}
-
-void CAGCCompressor::SoftFlushSegments(const uint32_t n_t, const double top_fraction)
-{
-    // 1. Gather all unwritten sequence counts
-    vector<uint32_t> counts;
     
-    seg_vec_mtx.lock();
-    for (const auto& seg : v_segments)
-    {
-        if (seg != nullptr)
-            counts.push_back(seg->get_unwritten_seqs_count());
-    }
-    seg_vec_mtx.unlock();
-
-    if (counts.empty())
-        return;
-
-    // 2. Find the dynamic threshold using O(N) partitioning
-    size_t target_idx = (size_t)(counts.size() * top_fraction);
-    if (target_idx >= counts.size()) 
-        target_idx = counts.size() - 1;
-
-    // nth_element reorganizes the vector so the element at target_idx is the correct threshold,
-    // and everything before it is greater than or equal to it.
-    std::nth_element(counts.begin(), counts.begin() + target_idx, counts.end(), std::greater<uint32_t>());
-    
-    uint32_t dynamic_threshold = counts[target_idx];
-
-    // Ensure empty segments are not flushed if the entire array is mostly empty
-    if (dynamic_threshold == 0)
-        dynamic_threshold = 1;
-
-    // 3. Delegate the flush to worker threads
-    vector<thread> v_threads;
-    v_threads.reserve(n_t);
-
-    atomic<uint32_t> id_segment{0};
-
-    for (uint32_t i = 0; i < n_t; ++i)
-    {
-        v_threads.emplace_back([&] {
-            auto zstd_ctx = ZSTD_createCCtx();
-
-            while (true)
-            {
-                uint32_t j = id_segment.fetch_add(1);
-
-                if (j >= no_segments)
-                    break;
-
-                if (v_segments[j] != nullptr)
-                    v_segments[j]->flush_soft(zstd_ctx, dynamic_threshold);
-            }
-
-            ZSTD_freeCCtx(zstd_ctx);
-        });
-    }
-
-    join_threads(v_threads);
-    out_archive->FlushOutBuffers();
+    return out_archive->GetCurrentOffset() + total_unwritten_compressed.load();
 }
-
 // EOF

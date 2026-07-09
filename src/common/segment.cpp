@@ -576,38 +576,43 @@ void CSegment::unpack(ZSTD_DCtx* zstd_ctx)
     internal_state = internal_state_t::normal;
 }
 
-void CSegment::flush_partial(ZSTD_CCtx* zstd_ctx)
+uint32_t CSegment::simulate_store(const vector<contig_t>& v_data, ZSTD_CCtx* zstd_ctx)
 {
-    lock_guard<mutex> lck(mtx);
+    size_t total_size = 0;
+    for (const auto& d : v_data) 
+        total_size += d.size() + 1;
 
-    if (!v_lzp.empty())
+    vector<uint8_t> buffer(total_size);
+    size_t offset = 0;
+    for (const auto& d : v_data) 
     {
-        store_in_archive(v_lzp, zstd_ctx);
-        v_lzp.clear();
+        copy(d.begin(), d.end(), buffer.begin() + offset);
+        offset += d.size();
+        buffer[offset++] = 0xff; 
     }
+
+    size_t a_size = ZSTD_compressBound(buffer.size());
+    vector<uint8_t> packed(a_size + 1);
+
+    // Look at store_in_archive() to see what it uses for the final argument here.
+    // Replace `this->compression_level` with the exact variable store_in_archive uses.
+    uint32_t packed_size = (uint32_t) ZSTD_compressCCtx(zstd_ctx, packed.data(), a_size, buffer.data(), buffer.size(), this->compression_level);
     
-    if (!v_raw.empty())
-    {
-        store_in_archive(v_raw, zstd_ctx);
-        v_raw.clear();
-    }
+    return packed_size;
 }
 
-void CSegment::flush_soft(ZSTD_CCtx* zstd_ctx, uint32_t min_items)
+uint32_t CSegment::estimate_partial_compressed_size(ZSTD_CCtx* zstd_ctx)
 {
     lock_guard<mutex> lck(mtx);
-
-    if (v_lzp.size() >= min_items)
-    {
-        store_in_archive(v_lzp, zstd_ctx);
-        v_lzp.clear();
-    }
+    uint32_t size = 0;
     
-    if (v_raw.size() >= min_items)
-    {
-        store_in_archive(v_raw, zstd_ctx);
-        v_raw.clear();
-    }
+    if (!v_lzp.empty()) 
+        size += simulate_store(v_lzp, zstd_ctx);
+    
+    if (!v_raw.empty()) 
+        size += simulate_store(v_raw, zstd_ctx);
+        
+    return size;
 }
 
 // EOF

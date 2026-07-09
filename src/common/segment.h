@@ -336,15 +336,10 @@ public:
     size_t get_ref_size() const;
 
     void appending_init();
-    //flush all current segment groups but not closing the archive
-    void flush_partial(ZSTD_CCtx* zstd_ctx);
-    //flush only the segment groups that have more than a certain items
-    void flush_soft(ZSTD_CCtx* zstd_ctx, uint32_t min_items);
 
-    uint32_t get_unwritten_seqs_count() {
-        lock_guard<mutex> lck(mtx);
-        return (uint32_t)(v_lzp.size() + v_raw.size());
-    }
+    uint32_t estimate_partial_compressed_size(ZSTD_CCtx* zstd_ctx);
+private:
+    uint32_t simulate_store(const vector<contig_t>& v_data, ZSTD_CCtx* zstd_ctx);   
 };
 
 // EOF
