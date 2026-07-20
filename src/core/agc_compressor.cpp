@@ -2483,8 +2483,11 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
 
     size_t num_empty_input = 0; 
     size_t samples_consumed = 0;
-    // Set initial offset to 40% to trigger the first check at 60% milestone
+    // Set initial offset to 40% to trigger the first check
     uint64_t buffer_offset = (target_part_size * 40) / 100;
+
+    size_t strict_check_interval = 2; // Will adapt dynamically
+    uint64_t last_true_size = 0;
 
     // Threshold limits
     uint64_t stop_threshold = (target_part_size * 95) / 100;
@@ -2586,8 +2589,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
         // 2. Determine if a precise size check is required
         if (strict_mode)
         {
-            // Strict mode: check exactly every 5 genomes
-            if (genomes_since_last_check >= 5)
+            // Strict mode: check exactly every n genomes
+            if (genomes_since_last_check >=  strict_check_interval)
             {
                 run_check = true;
             }
@@ -2616,7 +2619,8 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
             if (verbosity > 0)
             {
                 cerr << "Size check - Naive (Disk): " << naive_size 
-                     << " bytes, Simulated (Disk+Buffers): " << true_size << " bytes\n";
+                     << " bytes, Simulated (Disk+Buffers): " << true_size 
+                     << " (Strict interval: " << strict_check_interval << " genomes)\n";
             }
 
             // Final Stop Condition (95% of target)
@@ -2627,16 +2631,38 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
                 break;
             }
 
+            // --- Adaptive Interval Calculation ---
+            // Calculate the actual byte cost per genome and project the remaining runway
+            if (last_true_size > 0 && true_size > last_true_size && genomes_since_last_check > 0)
+            {
+                uint64_t bytes_added = true_size - last_true_size;
+                uint64_t avg_bytes_per_genome = bytes_added / genomes_since_last_check;
+                
+                if (avg_bytes_per_genome > 0 && true_size < stop_threshold)
+                {
+                    uint64_t bytes_remaining = stop_threshold - true_size;
+                    size_t estimated_genomes_left = bytes_remaining / avg_bytes_per_genome;
+                    
+                    // Set next check halfway to the estimated target to stay safe
+                    strict_check_interval = estimated_genomes_left / 2;
+                    
+                    // Apply hard boundaries to prevent extreme stalls or overshoots
+                    if (strict_check_interval < 2) strict_check_interval = 2;
+                    if (strict_check_interval > 100) strict_check_interval = 100;
+                }
+            }
+
             // Strict Mode Activation (75% of target)
             if (true_size >= strict_threshold && !strict_mode)
             {
                 if (verbosity > 0)
-                    cerr << "Strict threshold crossed. Switching to 5-genome batch checks.\n";
+                    cerr << "Strict threshold crossed. Switching to interval batch checks.\n";
                 strict_mode = true;
             }
 
             // Recalibrate variables for the next loop
             buffer_offset = (true_size > naive_size) ? (true_size - naive_size) : 0;
+            last_true_size = true_size;
             genomes_since_last_check = 0;
         }
 

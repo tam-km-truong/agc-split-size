@@ -412,3 +412,6 @@ While the forced flush guarantees size accuracy, it introduces two specific pena
 2. **Thread Synchronization and I/O Stalls**: The standard loop operates asynchronously without global blocking. `ForceFlushSegments()` forces a synchronization barrier where the main addition loop must pause while worker threads drain all segment memory arrays to disk. This causes brief spikes in I/O wait times and interrupts the CPU pipeline efficiency during the milestone checks.
 
 
+Install on mac m4:
+
+gmake CXX="g++-13 -D_Static_assert=static_assert" PLATFORM=m1

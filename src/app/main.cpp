@@ -147,7 +147,7 @@ bool CApplication::create_split()
 
         if (execution_params.verbosity() > 0)
             cerr << "Creating-split mode; currently " << part_name << " with reference " << reference_file << "\n";
-                    cerr << "Target size: " << execution_params.target_part_size << ".\n";
+                    cerr << "Target size: " << execution_params.target_part_size << " bytes.\n";
 
         CAGCCompressor agc_c;
 
