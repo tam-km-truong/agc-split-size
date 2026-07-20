@@ -127,6 +127,7 @@ void CApplication::usage_create() const
 	cerr << "   -p <size>      - split create output into multiple archives with approximate target size per part.\n";
 	cerr << "                    Supported suffixes: K, M, G, T.\n";
 	cerr << "                    In split mode, each part uses its first genome as reference.\n";
+	cerr << "   -x       	   - cap the adaptive batch check interval to a maximum of 10 genomes (split mode only)\n";
 }
 
 // *******************************************************************************************
@@ -135,7 +136,7 @@ bool CApplication::parse_params_create(const int argc, const char** argv)
 	ketopt_t o = KETOPT_INIT;
 	int i, c;
 
-	while ((c = ketopt(&o, argc, argv, 1, "t:b:s:k:f:l:acdfi:o:p:v:", 0)) >= 0) {
+	while ((c = ketopt(&o, argc, argv, 1, "t:b:s:k:f:l:acdfi:o:p:v:x", 0)) >= 0) {
 		if (c == 't') {
 			execution_params.no_threads.assign(atoi(o.arg));
 		} else if (c == 'b') {
@@ -165,6 +166,8 @@ bool CApplication::parse_params_create(const int argc, const char** argv)
 			if (execution_params.target_part_size == 0)
 				return false;
 			execution_params.split_create = true;
+		} else if (c == 'x') {
+            execution_params.is_strict = true;
 		} else if (c == 'v') {
 			execution_params.verbosity.assign(atoi(o.arg));
 		} else if (c == ':') {

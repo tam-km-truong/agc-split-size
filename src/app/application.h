@@ -82,6 +82,7 @@ struct CParams
 	bool fast = false;
 	bool streaming = false;
 	bool split_create = false;
+	bool is_strict = false;
 
 	CParams() = default;
 };

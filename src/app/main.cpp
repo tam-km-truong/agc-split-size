@@ -147,7 +147,9 @@ bool CApplication::create_split()
 
         if (execution_params.verbosity() > 0)
             cerr << "Creating-split mode; currently " << part_name << " with reference " << reference_file << "\n";
-                    cerr << "Target size: " << execution_params.target_part_size << " bytes.\n";
+            cerr << "Target size: " << execution_params.target_part_size << " bytes.\n";
+            if (execution_params.is_strict)
+            cerr << "Strict mode on.\n";
 
         CAGCCompressor agc_c;
 
@@ -181,7 +183,15 @@ bool CApplication::create_split()
 
         size_t consumed_count = 0;
         if (r)
-            consumed_count = agc_c.AddSampleSplit(v_remaining_samples, execution_params.no_threads(), execution_params.target_part_size);
+            consumed_count = agc_c.AddSampleSplit(
+                v_remaining_samples, 
+                execution_params.no_threads(), 
+                execution_params.target_part_size,
+                execution_params.is_strict);
+
+        if (execution_params.verbosity() > 0)
+            cerr << "Consumed count: " << consumed_count << " genomes.\n";
+
 
         if (r && execution_params.store_cmd_line)
             agc_c.AddCmdLine(cmd_line);

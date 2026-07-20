@@ -766,7 +766,7 @@ public:
 
 	uint64_t GetSimulatedArchiveSize(const uint32_t no_threads);
 
-	size_t AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size);
+	size_t AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size,const bool is_strict);
 };
 
 // EOF

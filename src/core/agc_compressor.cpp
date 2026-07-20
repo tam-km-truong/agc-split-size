@@ -2446,7 +2446,7 @@ uint64_t CAGCCompressor::GetSimulatedArchiveSize(const uint32_t n_t)
     return out_archive->GetCurrentOffset() + total_unwritten_compressed.load();
 }
 
-size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size)
+size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sample_file_name, const uint32_t no_threads, const uint64_t target_part_size, const bool is_strict)
 {
     if (_v_sample_file_name.empty())
         return 0;
@@ -2645,10 +2645,12 @@ size_t CAGCCompressor::AddSampleSplit(const vector<pair<string, string>>& _v_sam
                     
                     // Set next check halfway to the estimated target to stay safe
                     strict_check_interval = estimated_genomes_left / 2;
+
+                    size_t max_interval = is_strict ? 10 : 100;
                     
                     // Apply hard boundaries to prevent extreme stalls or overshoots
                     if (strict_check_interval < 2) strict_check_interval = 2;
-                    if (strict_check_interval > 100) strict_check_interval = 100;
+                    if (strict_check_interval > max_interval) strict_check_interval = max_interval;
                 }
             }
 
